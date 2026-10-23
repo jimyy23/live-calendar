@@ -31,6 +31,7 @@
         <dt>Team view</dt><dd><input readonly value="{{.ViewURL}}" onclick="this.select()"></dd>
         <dt>Edit link</dt><dd><input readonly value="{{.EditURL}}" onclick="this.select()"></dd>
         <dt>Subscribe (ICS)</dt><dd><input readonly value="{{.ICSURL}}" onclick="this.select()"></dd>
+        <dt>Install / update</dt><dd><textarea readonly rows="3" onclick="this.select()" aria-label="Windows install command for {{.Username}}">{{.InstallCommand}}</textarea><span class="muted small">Paste into PowerShell or Command Prompt on this user's PC. Includes username and token; keep private.</span></dd>
       </dl>
       <div class="row">
         <form method="post" action="/admin/users/{{.ID}}/rotate" onsubmit="return confirm('Rotate token for {{.Username}}? Existing edit links and installed clients stop working.')"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="small">Rotate token</button></form>
@@ -42,10 +43,9 @@
 
   <section class="card">
     <h2>Windows client</h2>
-    <p>Run the installer on each PC, enter the username and token. It runs silently, starts at login and only reports whether
+    <p>Copy the per-user Install / update command above and paste into PowerShell or Command Prompt on each PC. It replaces previous installs, runs silently, starts at login and only reports whether
       someone used the keyboard/mouse in the last 5 minutes. It removes itself if this server is unreachable for 14 days.</p>
     <div class="row">
-      <a class="btn" href="/download/install.cmd">Download installer</a>
       <a class="btn ghost" href="/download/uninstall.cmd">Download uninstaller</a>
       <a class="btn ghost" href="/download/livecal.exe">livecal.exe only</a>
     </div>

@@ -32,9 +32,14 @@ type Server struct {
 	secret []byte
 	tpl    *template.Template
 	limit  *rateLimiter
+	asn    *asnFilter
 }
 
 func New(cfg *Config) (*Server, error) {
+	filter, err := newASNFilter(cfg)
+	if err != nil {
+		return nil, err
+	}
 	st, err := OpenStore(cfg.dbPath())
 	if err != nil {
 		return nil, err
@@ -49,7 +54,7 @@ func New(cfg *Config) (*Server, error) {
 		return nil, err
 	}
 	log.Printf("sync: fill_online=%v eat_offline=%v, timezone=%s", cfg.FillOnline, cfg.EatOffline, cfg.TZName)
-	return &Server{cfg: cfg, store: st, secret: []byte(sec), tpl: tpl, limit: newRateLimiter()}, nil
+	return &Server{cfg: cfg, store: st, secret: []byte(sec), tpl: tpl, limit: newRateLimiter(), asn: filter}, nil
 }
 
 func (s *Server) Close() error { return s.store.Close() }
@@ -71,6 +76,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /download/uninstall.cmd", s.admin(s.downloadUninstall))
 	// the installer itself fetches the exe without a session; the binary is not secret
 	mux.HandleFunc("GET /client/livecal.exe", s.downloadExe)
+	mux.HandleFunc("GET /client/install.ps1", s.installPowerShell)
 
 	mux.HandleFunc("GET /view/{uuid}", s.viewPage)
 	mux.HandleFunc("GET /edit/{uuid}", s.editPage)
@@ -94,7 +100,7 @@ func (s *Server) Handler() http.Handler {
 			time.Sleep(6 * time.Hour)
 		}
 	}()
-	return securityHeaders(mux)
+	return s.asnGate(securityHeaders(mux))
 }
 
 func securityHeaders(h http.Handler) http.Handler {
@@ -237,10 +243,11 @@ func (l *rateLimiter) allow(key string, max int64, window int64) bool {
 
 type userRow struct {
 	*User
-	Status  LiveStatus
-	ViewURL string
-	EditURL string
-	ICSURL  string
+	Status         LiveStatus
+	ViewURL        string
+	EditURL        string
+	ICSURL         string
+	InstallCommand string
 }
 
 func (s *Server) render(w http.ResponseWriter, name string, data any) {
@@ -266,9 +273,10 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	for _, u := range users {
 		st, _ := s.store.Status(u.ID, now)
 		rows = append(rows, userRow{User: u, Status: st,
-			ViewURL: s.cfg.BaseURL + "/view/" + u.UUID + "?team_token=" + s.cfg.TeamToken,
-			EditURL: s.cfg.BaseURL + "/edit/" + u.UUID + "?token=" + u.Token,
-			ICSURL:  s.cfg.BaseURL + "/ical/" + u.UUID + ".ics"})
+			ViewURL:        s.cfg.BaseURL + "/view/" + u.UUID + "?team_token=" + s.cfg.TeamToken,
+			EditURL:        s.cfg.BaseURL + "/edit/" + u.UUID + "?token=" + u.Token,
+			ICSURL:         s.cfg.BaseURL + "/ical/" + u.UUID + ".ics",
+			InstallCommand: s.installCommand(u)})
 	}
 	_, exeErr := os.Stat(s.cfg.ClientExe)
 	s.render(w, "admin.html", map[string]any{

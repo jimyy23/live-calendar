@@ -1,10 +1,59 @@
 package server
 
 import (
+	"encoding/base64"
+	"encoding/binary"
 	"net/http"
 	"os"
 	"strings"
+	"unicode/utf16"
 )
+
+func psQuote(v string) string { return "'" + strings.ReplaceAll(v, "'", "''") + "'" }
+
+func (s *Server) installCommand(u *User) string {
+	// EncodedCommand avoids cmd.exe/PowerShell shell quoting differences. The
+	// credentials are still secrets (encoding is NOT encryption).
+	script := "$p=Join-Path $env:TEMP ([guid]::NewGuid().ToString()+'.ps1'); try { Invoke-WebRequest -UseBasicParsing " + psQuote(s.cfg.BaseURL+"/client/install.ps1") + " -OutFile $p; & $p -Username " + psQuote(u.Username) + " -Token " + psQuote(u.Token) + " } finally { Remove-Item $p -Force -ErrorAction SilentlyContinue }"
+	units := utf16.Encode([]rune(script))
+	b := make([]byte, len(units)*2)
+	for i, v := range units {
+		binary.LittleEndian.PutUint16(b[i*2:], v)
+	}
+	return "powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand " + base64.StdEncoding.EncodeToString(b)
+}
+
+const powerShellInstaller = `param([Parameter(Mandatory=$true)][string]$Username, [Parameter(Mandatory=$true)][string]$Token)
+$ErrorActionPreference = 'Stop'
+$server = __SERVER__
+$dir = Join-Path $env:LOCALAPPDATA 'LiveCalendar'
+$exe = Join-Path $dir 'livecal.exe'
+$temp = Join-Path $env:TEMP ([guid]::NewGuid().ToString()+'.exe')
+try {
+  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+  Invoke-WebRequest -UseBasicParsing "$server/client/livecal.exe" -OutFile $temp
+  # Validate credentials before stopping/replacing an existing installation.
+  $auth = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Username+':'+$Token))
+  $null = Invoke-WebRequest -UseBasicParsing "$server/api/client/hello" -Headers @{Authorization="Basic $auth"}
+  New-Item -ItemType Directory -Path $dir -Force | Out-Null
+  Get-Process -Name livecal -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force
+  for ($i=0; $i -lt 20; $i++) {
+    try { Copy-Item $temp $exe -Force; break } catch { if ($i -eq 19) { throw }; Start-Sleep -Milliseconds 250 }
+  }
+  # windowsgui executables must be waited for explicitly in PowerShell.
+  $arguments = 'setup "'+$server+'" "'+$Username+'" "'+$Token+'"'
+  $process = Start-Process -FilePath $exe -ArgumentList $arguments -Wait -PassThru
+  if ($process.ExitCode -ne 0) { throw "Client setup failed (exit $($process.ExitCode))." }
+  Start-Process -FilePath $exe
+  Write-Host 'Live Calendar installed/updated. It runs silently and starts at login.'
+} finally {
+  Remove-Item $temp -Force -ErrorAction SilentlyContinue
+}
+`
+
+func (s *Server) installPowerShell(w http.ResponseWriter, r *http.Request) {
+	sendScript(w, "livecal-install.ps1", strings.ReplaceAll(powerShellInstaller, "__SERVER__", psQuote(s.cfg.BaseURL)))
+}
 
 func (s *Server) downloadExe(w http.ResponseWriter, r *http.Request) {
 	f, err := os.Open(s.cfg.ClientExe)

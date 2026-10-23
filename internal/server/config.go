@@ -10,16 +10,18 @@ import (
 )
 
 type Config struct {
-	BaseURL       string
-	AdminPassword string
-	TeamToken     string
-	TZName        string
-	Loc           *time.Location
-	Addr          string
-	DataDir       string
-	ClientExe     string
-	FillOnline    bool
-	EatOffline    bool
+	BaseURL        string
+	AdminPassword  string
+	TeamToken      string
+	TZName         string
+	Loc            *time.Location
+	Addr           string
+	DataDir        string
+	ClientExe      string
+	FillOnline     bool
+	EatOffline     bool
+	AllowedASNs    string
+	TrustedProxies string
 }
 
 func envBool(k string, def bool) (bool, error) {
@@ -43,13 +45,15 @@ func env(k, def string) string {
 
 func LoadConfig() (*Config, error) {
 	c := &Config{
-		BaseURL:       strings.TrimRight(env("BASE_URL", "http://localhost:8933/"), "/"),
-		AdminPassword: env("ADMIN_PASSWORD", ""),
-		TeamToken:     env("TEAM_PING_TOKEN", ""),
-		TZName:        env("TIMEZONE", "America/Toronto"),
-		Addr:          env("LISTEN_ADDR", ":8933"),
-		DataDir:       env("DATA_DIR", "./data"),
-		ClientExe:     env("CLIENT_EXE", "./dist/livecal.exe"),
+		BaseURL:        strings.TrimRight(env("BASE_URL", "http://localhost:8933/"), "/"),
+		AdminPassword:  env("ADMIN_PASSWORD", ""),
+		TeamToken:      env("TEAM_PING_TOKEN", ""),
+		TZName:         env("TIMEZONE", "America/Toronto"),
+		Addr:           env("LISTEN_ADDR", ":8933"),
+		DataDir:        env("DATA_DIR", "./data"),
+		ClientExe:      env("CLIENT_EXE", "./dist/livecal.exe"),
+		AllowedASNs:    env("ALLOWED_ASNS", ""),
+		TrustedProxies: env("TRUSTED_PROXY_CIDRS", ""),
 	}
 	if c.AdminPassword == "" {
 		return nil, errors.New("ADMIN_PASSWORD is required")

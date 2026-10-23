@@ -21,20 +21,24 @@ import (
 )
 
 var (
-	user32                = windows.NewLazySystemDLL("user32.dll")
-	kernel32              = windows.NewLazySystemDLL("kernel32.dll")
-	pGetLastInput         = user32.NewProc("GetLastInputInfo")
-	pMessageBox           = user32.NewProc("MessageBoxW")
-	pGetTickCount         = kernel32.NewProc("GetTickCount")
-	pSetWindowsHookEx     = user32.NewProc("SetWindowsHookExW")
-	pUnhookWindowsHookEx  = user32.NewProc("UnhookWindowsHookEx")
-	pCallNextHookEx       = user32.NewProc("CallNextHookEx")
-	pGetWindowRect        = user32.NewProc("GetWindowRect")
-	pSystemParametersInfo = user32.NewProc("SystemParametersInfoW")
-	pSetWindowPos         = user32.NewProc("SetWindowPos")
-	pSetForegroundWindow  = user32.NewProc("SetForegroundWindow")
-	pSetTimer             = user32.NewProc("SetTimer")
-	pKillTimer            = user32.NewProc("KillTimer")
+	user32                    = windows.NewLazySystemDLL("user32.dll")
+	kernel32                  = windows.NewLazySystemDLL("kernel32.dll")
+	pGetLastInput             = user32.NewProc("GetLastInputInfo")
+	pMessageBox               = user32.NewProc("MessageBoxW")
+	pGetTickCount             = kernel32.NewProc("GetTickCount")
+	pSetWindowsHookEx         = user32.NewProc("SetWindowsHookExW")
+	pUnhookWindowsHookEx      = user32.NewProc("UnhookWindowsHookEx")
+	pCallNextHookEx           = user32.NewProc("CallNextHookEx")
+	pGetWindowRect            = user32.NewProc("GetWindowRect")
+	pSystemParametersInfo     = user32.NewProc("SystemParametersInfoW")
+	pSetWindowPos             = user32.NewProc("SetWindowPos")
+	pSetForegroundWindow      = user32.NewProc("SetForegroundWindow")
+	pSetTimer                 = user32.NewProc("SetTimer")
+	pKillTimer                = user32.NewProc("KillTimer")
+	pGetForegroundWindow      = user32.NewProc("GetForegroundWindow")
+	pGetWindowThreadProcessID = user32.NewProc("GetWindowThreadProcessId")
+	pAttachThreadInput        = user32.NewProc("AttachThreadInput")
+	pBringWindowToTop         = user32.NewProc("BringWindowToTop")
 )
 
 const runKey = `Software\Microsoft\Windows\CurrentVersion\Run`
@@ -74,9 +78,12 @@ func positionPopup(hwnd uintptr) {
 		return
 	}
 	x := work.Left + (work.Right-work.Left-(box.Right-box.Left))/2
-	y := work.Top + 24
+	y := work.Top + (work.Bottom-work.Top-(box.Bottom-box.Top))/2
 	if x < work.Left {
 		x = work.Left
+	}
+	if y < work.Top {
+		y = work.Top
 	}
 	// HWND_TOPMOST; do not activate inside the activation hook (which can
 	// recursively activate the dialog), and don't resize the native dialog.
@@ -88,10 +95,22 @@ func positionPopup(hwnd uintptr) {
 // application windows without repeatedly stealing keyboard focus.
 var popupTimer = windows.NewCallback(func(hwnd, msg, timer, tick uintptr) uintptr {
 	positionPopup(hwnd)
-	if timer == 1 {
-		pKillTimer.Call(hwnd, 1)
+	if timer == 0x4c4301 {
+		pKillTimer.Call(hwnd, timer)
+		foreground, _, _ := pGetForegroundWindow.Call()
+		thread, _, _ := pGetWindowThreadProcessID.Call(foreground, 0)
+		current := uintptr(windows.GetCurrentThreadId())
+		attached := uintptr(0)
+		if thread != 0 && thread != current {
+			attached, _, _ = pAttachThreadInput.Call(current, thread, 1)
+		}
+		pBringWindowToTop.Call(hwnd)
 		pSetForegroundWindow.Call(hwnd)
-		pSetTimer.Call(hwnd, 2, 1000, popupTimerRepeat)
+		if attached != 0 {
+			pAttachThreadInput.Call(current, thread, 0)
+		}
+		positionPopup(hwnd)
+		pSetTimer.Call(hwnd, 0x4c4302, 1000, popupTimerRepeat)
 	}
 	return 0
 })
@@ -106,7 +125,7 @@ var popupTimerRepeat = windows.NewCallback(func(hwnd, msg, timer, tick uintptr) 
 var popupHook = windows.NewCallback(func(code int32, hwnd, param uintptr) uintptr {
 	if code == 5 { // HCBT_ACTIVATE
 		positionPopup(hwnd)
-		pSetTimer.Call(hwnd, 1, 100, popupTimer)
+		pSetTimer.Call(hwnd, 0x4c4301, 100, popupTimer)
 	}
 	r, _, _ := pCallNextHookEx.Call(0, uintptr(code), hwnd, param)
 	return r
@@ -202,6 +221,10 @@ func setup(server, user, token string) int {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "test-popup" {
+		showPopup(Message{From: "Live Calendar", Text: "Popup test: this window should be centered and above normal application windows.", At: time.Now().Unix()})
+		return
+	}
 	if len(os.Args) >= 2 && os.Args[1] == "setup" {
 		if len(os.Args) != 5 {
 			os.Exit(exitUsage)
