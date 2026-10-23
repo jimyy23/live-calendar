@@ -32,6 +32,16 @@
   function localInput(ts) { const p = parts(ts); return `${p.year}-${pad(p.month)}-${pad(p.day)}T${pad(p.hour)}:${pad(p.minute)}`; }
   function fromInput(v) { const m = /^(\d+)-(\d+)-(\d+)T(\d+):(\d+)/.exec(v); return m ? wallToTs(+m[1], +m[2], +m[3], (+m[4]) * 3600 + (+m[5]) * 60) : NaN; }
   const now = () => Math.floor(Date.now() / 1000);
+  const clockDate = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const clockTime = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  function updateClock() {
+    const date = new Date();
+    $('clock-date').textContent = clockDate.format(date);
+    $('clock-time').textContent = clockTime.format(date);
+    $('clock-time').dateTime = date.toISOString();
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
   const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function dow(ts) { const p = parts(ts); return new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay(); }
@@ -151,6 +161,9 @@
   }
 
   function setStatus(st) {
+    const header = document.querySelector('.live');
+    header.classList.toggle('is-online', !!st.online);
+    header.classList.toggle('is-offline', !st.online);
     window.setAvatarOnline && window.setAvatarOnline(st.online);
     const s = $('status');
     s.textContent = st.online ? 'Currently Online' : 'Currently Offline';

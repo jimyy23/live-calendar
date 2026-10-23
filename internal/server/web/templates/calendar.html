@@ -9,6 +9,11 @@
     <div id="status" class="status">…</div>
     <div id="status-sub" class="muted small"></div>
   </div>
+  <div class="live-clock" aria-label="Current date and time">
+    <div id="clock-date" class="muted small"></div>
+    <time id="clock-time"></time>
+    <div class="muted small">{{.TZ}}</div>
+  </div>
   {{if eq .Mode "view"}}
   <form id="msg" class="msg">
     <input id="msg-from" maxlength="40" placeholder="Your name (optional)">
