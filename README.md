@@ -59,13 +59,13 @@ After updating, test positioning without sending a server message (PowerShell):
 ## Optional ASN allowlist
 
 Set `ALLOWED_ASNS=AS13335,15169` (example only; use your own ASNs). Empty means disabled.
-The app fetches the OXL IPv4+IPv6 ASN ZIP database, caches it in `/data`, and refreshes daily.
+The app fetches each allowed ASN's IPv4+IPv6 `aggregated.json` from [ipverse/as-ip-blocks](https://github.com/ipverse/as-ip-blocks), caches it in `/data/asn-ipverse-{ASN}.json`, and refreshes daily. No API key or bulk database download is needed. The provider includes ASNs with announcements within the last 90 days; these ranges are not proof of current ownership or trustworthiness.
 Unknown IPs and non-allowed networks receive HTTP 403 on **all** public routes, including ICS and client APIs.
 If the download fails, the last good cache remains in use; without usable data all public traffic is denied.
-Daily refresh failures are logged. OXL limits anonymous database downloads to two per IP/day, so persist `/data`.
+Daily refresh failures are logged, including rate-limited denial diagnostics showing the connection peer and evaluated visitor IP. Persist `/data` to retain cached ranges across redeploys. Old OXL caches are not used.
 
 Behind Easypanel/Traefik, set `TRUSTED_PROXY_CIDRS` to the **actual proxy IPs/CIDRs**. Without this, the proxy's IP—not the visitor's—is checked. Never set `0.0.0.0/0` or `::/0`, or trust a network containing arbitrary clients. The proxy must append/replace `X-Forwarded-For` correctly. Do not publish a bypass route to the app. Loopback-only `/healthz` is exempt for the Docker healthcheck.
 
 **This is defense in depth, not a guarantee against exploitation.** Go's HTTP stack accepts/parses requests before the middleware runs. To reject connections before they reach Go (including protection from Go vulnerabilities), enforce equivalent source-network restrictions at your firewall/reverse proxy, with no direct public access to port 8933. ASN membership identifies networks, not trustworthy people. Google/Apple fetchers and PCs outside your allowed networks are also blocked.
 
-IP address data powered by [OXL](https://geoip.oxl.app), BSD-3-Clause dataset.
+IP address data: [ipverse/as-ip-blocks](https://github.com/ipverse/as-ip-blocks), CC0 1.0.
