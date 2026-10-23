@@ -123,7 +123,8 @@
       for (const { e, l } of placed) {
         const s = Math.max(e.start, d0), en = Math.min(e.end, d1);
         const el = document.createElement('div');
-        el.className = `ev ${e.status}${e.auto ? ' auto' : ''}`;
+        const current = document.querySelector('.live').classList.contains('is-online') && e.status === 'working' && e.start <= now() && e.end > now();
+        el.className = `ev ${e.status}${e.auto ? ' auto' : ''}${current ? ' live-working' : ''}`;
         el.style.top = (secOf(i, s) / 3600) * H + 'px';
         el.style.height = Math.max(14, ((en - s) / 3600) * H - 2) + 'px';
         if (lanes.length > 1) {
