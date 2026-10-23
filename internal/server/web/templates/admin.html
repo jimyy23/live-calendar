@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Live Calendar - admin</title><link rel="stylesheet" href="/static/style.css"></head>
+<body>
+<header class="bar">
+  <h1>Live Calendar</h1>
+  <form method="post" action="/logout"><button class="link">Sign out</button></form>
+</header>
+<main class="wrap">
+  {{if .Flash}}<p class="flash">{{.Flash}}</p>{{end}}
+
+  <section class="card">
+    <h2>Users</h2>
+    <form class="row" method="post" action="/admin/users">
+      <input name="username" placeholder="new username" required pattern="[A-Za-z0-9._\-]{2,32}">
+      <button>Create user</button>
+    </form>
+    {{if not .Users}}<p class="muted">No users yet.</p>{{end}}
+    {{range .Users}}
+    <div class="user">
+      <div class="user-head">
+        <span class="dot {{if .Status.Online}}on{{else if .Status.Running}}idle{{end}}"></span>
+        <b>{{.Username}}</b>
+        <span class="muted">{{if .Status.Online}}online{{else if .Status.Running}}away (client running){{else}}offline{{end}}</span>
+        <span class="grow"></span>
+        <a href="/edit/{{.UUID}}">Open calendar</a>
+      </div>
+      <dl class="kv">
+        <dt>Token</dt><dd><code class="secret" tabindex="0">{{.Token}}</code></dd>
+        <dt>UUID</dt><dd><code>{{.UUID}}</code></dd>
+        <dt>Team view</dt><dd><input readonly value="{{.ViewURL}}" onclick="this.select()"></dd>
+        <dt>Edit link</dt><dd><input readonly value="{{.EditURL}}" onclick="this.select()"></dd>
+        <dt>Subscribe (ICS)</dt><dd><input readonly value="{{.ICSURL}}" onclick="this.select()"></dd>
+      </dl>
+      <div class="row">
+        <form method="post" action="/admin/users/{{.ID}}/rotate" onsubmit="return confirm('Rotate token for {{.Username}}? Existing edit links and installed clients stop working.')"><button class="small">Rotate token</button></form>
+        <form method="post" action="/admin/users/{{.ID}}/delete" onsubmit="return confirm('Delete {{.Username}} and their calendar?')"><button class="small danger">Delete</button></form>
+      </div>
+    </div>
+    {{end}}
+  </section>
+
+  <section class="card">
+    <h2>Windows client</h2>
+    <p>Run the installer on each PC, enter the username and token. It runs silently, starts at login and only reports whether
+      someone used the keyboard/mouse in the last 5 minutes. It removes itself if this server is unreachable for 14 days.</p>
+    <div class="row">
+      <a class="btn" href="/download/install.cmd">Download installer</a>
+      <a class="btn ghost" href="/download/uninstall.cmd">Download uninstaller</a>
+      <a class="btn ghost" href="/download/livecal.exe">livecal.exe only</a>
+    </div>
+    {{if not .ExeOK}}<p class="err">livecal.exe is not built on this server — build with the Dockerfile.</p>{{end}}
+    <p class="muted">Sync: online filling <b>{{if .FillOnline}}on{{else}}off{{end}}</b>, offline eating <b>{{if .EatOffline}}on{{else}}off{{end}}</b>
+      (env SYNC_FILL_ONLINE / SYNC_EAT_OFFLINE). Timezone {{.TZ}}.</p>
+  </section>
+</main>
+</body></html>

@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Live Calendar - sign in</title><link rel="stylesheet" href="/static/style.css"></head>
+<body class="center">
+<form class="card narrow" method="post" action="/login">
+  <h1>Live Calendar</h1>
+  {{if .Error}}<p class="err">Wrong password.</p>{{end}}
+  <label>Admin password <input type="password" name="password" autofocus required autocomplete="current-password"></label>
+  <button>Sign in</button>
+</form>
+</body></html>

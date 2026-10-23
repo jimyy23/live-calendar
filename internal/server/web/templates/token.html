@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Live Calendar - edit</title><link rel="stylesheet" href="/static/style.css"></head>
+<body class="center">
+<form class="card narrow" method="post" action="/edit/{{.UUID}}">
+  <h1>Edit calendar</h1>
+  {{if .Error}}<p class="err">Invalid token.</p>{{end}}
+  <label>Token <input type="password" name="token" autofocus required autocomplete="off"></label>
+  <button>Continue</button>
+</form>
+</body></html>

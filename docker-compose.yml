@@ -1,0 +1,16 @@
+services:
+  livecal:
+    build: .
+    image: livecal:latest
+    restart: unless-stopped
+    ports:
+      - "8933:8933"
+    # copy .env.example to .env and set real secrets
+    env_file:
+      - path: .env
+        required: true
+    volumes:
+      - livecal-data:/data
+
+volumes:
+  livecal-data:

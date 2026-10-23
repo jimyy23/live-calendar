@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{.User.Username}} - Live Calendar</title><link rel="stylesheet" href="/static/style.css"></head>
+<body class="cal-page" data-uuid="{{.User.UUID}}" data-mode="{{.Mode}}" data-tz="{{.TZ}}">
+<header class="live">
+  <canvas id="avatar" width="32" height="24" aria-hidden="true"></canvas>
+  <div class="live-text">
+    <h1>{{.User.Username}}</h1>
+    <div id="status" class="status">…</div>
+    <div id="status-sub" class="muted small"></div>
+  </div>
+  {{if eq .Mode "view"}}
+  <form id="msg" class="msg">
+    <input id="msg-from" maxlength="40" placeholder="Your name (optional)">
+    <div class="row"><input id="msg-text" maxlength="300" required placeholder="Short message to pop up on their PC">
+    <button>Send</button></div>
+    <div id="msg-note" class="muted small"></div>
+  </form>
+  {{end}}
+</header>
+
+<nav class="toolbar">
+  <button id="today">Today</button>
+  <button id="prev" aria-label="Previous">‹</button>
+  <button id="next" aria-label="Next">›</button>
+  <span id="range" class="range"></span>
+  <span class="grow"></span>
+  <select id="days" aria-label="View">
+    <option value="7" selected>Week</option>
+    <option value="3">3 days</option>
+    <option value="1">Day</option>
+  </select>
+  <span class="legend"><i class="sw working"></i>Working <i class="sw unavailable"></i>Unavailable</span>
+  <button id="subscribe" class="ghost">Subscribe</button>
+</nav>
+
+<div class="tznote muted small">Times shown in {{.TZ}}{{if eq .Mode "edit"}} · click or drag on empty space to add a block{{end}}</div>
+<div id="cal" class="cal"></div>
+
+<dialog id="dlg">
+  <form method="dialog" id="evform">
+    <h3 id="dlg-title">New event</h3>
+    <div class="row seg">
+      <label><input type="radio" name="status" value="working" checked> Working</label>
+      <label><input type="radio" name="status" value="unavailable"> Unavailable</label>
+    </div>
+    <div class="row">
+      <label>Start <input type="datetime-local" id="ev-start" step="900" required></label>
+      <label>End <input type="datetime-local" id="ev-end" step="900" required></label>
+    </div>
+    <label>Description <textarea id="ev-desc" maxlength="500" rows="3" placeholder="optional"></textarea></label>
+    <p id="ev-err" class="err"></p>
+    <div class="row">
+      <button value="save" id="ev-save">Save</button>
+      <button value="delete" id="ev-del" class="danger" type="button">Delete</button>
+      <span class="grow"></span>
+      <button value="cancel" type="button" id="ev-cancel" class="ghost">Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="subdlg">
+  <h3>Subscribe</h3>
+  <p class="small">Add this URL in Google Calendar (Other calendars → From URL), Apple Calendar (File → New Calendar Subscription) or Outlook:</p>
+  <input readonly value="{{.ICSURL}}" onclick="this.select()">
+  <p class="small"><a href="#" id="webcal">Open in calendar app</a></p>
+  <form method="dialog"><button>Close</button></form>
+</dialog>
+
+<div id="ics" hidden>{{.ICSURL}}</div>
+<script src="/static/avatar.js"></script>
+<script src="/static/cal.js"></script>
+</body></html>
