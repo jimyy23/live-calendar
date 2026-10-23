@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS deliveries (
 `
 
 const (
+	liveSlot          = int64(15 * 60)
+	liveMergeGap      = int64(30 * 60)
 	StatusWorking     = "working"
 	StatusUnavailable = "unavailable"
 
@@ -359,7 +361,7 @@ func syncWorking(tx *sql.Tx, userID int64, online bool, now int64, opt SyncOptio
 	var err error
 	switch {
 	case online && opt.FillOnline:
-		changed, err = fillWorking(tx, userID, from, to, now)
+		changed, err = fillLiveWorking(tx, userID, now)
 	case !online && opt.EatOffline:
 		changed, err = eatWorking(tx, userID, from, to, now)
 	}
@@ -375,10 +377,69 @@ func syncWorking(tx *sql.Tx, userID int64, online bool, now int64, opt SyncOptio
 	return nil
 }
 
+// Activity occupies its entire quarter-hour. Merge only automatic blocks,
+// preserving the oldest event ID so subscription updates remain stable.
+func fillLiveWorking(tx *sql.Tx, userID, now int64) (bool, error) {
+	var scheduled int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM events WHERE user_id=? AND status='working' AND auto=0 AND start_at<=? AND end_at>?`, userID, now, now).Scan(&scheduled); err != nil {
+		return false, err
+	}
+	if scheduled > 0 {
+		return false, nil
+	}
+	start := now - now%liveSlot
+	end := start + liveSlot
+	var matches []span
+	// Include connected neighbors transitively, without a duration cap.
+	for {
+		rows, err := tx.Query(`SELECT id,start_at,end_at FROM events WHERE user_id=? AND status='working' AND auto=1 AND description='' AND start_at<=? AND end_at>=? ORDER BY id`, userID, end+liveMergeGap, start-liveMergeGap)
+		if err != nil {
+			return false, err
+		}
+		matches = nil
+		oldStart, oldEnd := start, end
+		for rows.Next() {
+			var sp span
+			if err := rows.Scan(&sp.id, &sp.start, &sp.end); err != nil {
+				rows.Close()
+				return false, err
+			}
+			matches = append(matches, sp)
+			start = min(start, sp.start-sp.start%liveSlot)
+			end = max(end, ((sp.end+liveSlot-1)/liveSlot)*liveSlot)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return false, err
+		}
+		if start == oldStart && end == oldEnd {
+			break
+		}
+	}
+	if len(matches) == 0 {
+		_, err := tx.Exec(`INSERT INTO events(user_id,start_at,end_at,status,description,auto,updated_at) VALUES(?,?,?,'working','',1,?)`, userID, start, end, now)
+		return true, err
+	}
+	keep := matches[0]
+	if len(matches) == 1 && keep.start == start && keep.end == end {
+		return false, nil
+	}
+	if _, err := tx.Exec(`UPDATE events SET start_at=?,end_at=?,updated_at=? WHERE id=?`, start, end, now, keep.id); err != nil {
+		return false, err
+	}
+	for _, sp := range matches[1:] {
+		if _, err := tx.Exec(`DELETE FROM events WHERE id=?`, sp.id); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
 type span struct{ id, start, end int64 }
 
 func workingSpans(tx *sql.Tx, userID, from, to int64, inclusive bool) ([]span, error) {
-	q := `SELECT id, start_at, end_at FROM events WHERE user_id=? AND status='working' AND start_at < ? AND end_at > ? ORDER BY start_at, id`
+	q := `SELECT id, start_at, end_at FROM events WHERE user_id=? AND status='working' AND auto=0 AND start_at < ? AND end_at > ? ORDER BY start_at, id`
 	if inclusive {
 		q = `SELECT id, start_at, end_at FROM events WHERE user_id=? AND status='working' AND start_at <= ? AND end_at >= ? ORDER BY start_at, id`
 	}

@@ -70,7 +70,7 @@ func TestFillExtendsAndGapUntouched(t *testing.T) {
 		ping(t, s, u, true, now)
 	}
 	w := working(t, s, u)
-	if len(w) != 1 || w[0].Start != base || w[0].End != base+600+lookahead {
+	if len(w) != 1 || w[0].Start != base || w[0].End != base+liveSlot {
 		t.Fatalf("expected one growing block: %+v", w)
 	}
 	// client not running for an hour: nothing in the gap is created
@@ -78,6 +78,58 @@ func TestFillExtendsAndGapUntouched(t *testing.T) {
 	w = working(t, s, u)
 	if len(w) != 2 || w[1].Start != base+2*h {
 		t.Fatalf("gap filled or block not created: %+v", w)
+	}
+}
+
+func TestLiveQuarterHoursAndShortGapMerge(t *testing.T) {
+	s, u := newTestStore(t)
+	base := int64(1_800_000_000)
+	ping(t, s, u, true, base+60) // :01 -> :00–:15
+	w := working(t, s, u)
+	if len(w) != 1 || w[0].Start != base || w[0].End != base+900 {
+		t.Fatal(w)
+	}
+	id := w[0].ID
+	ping(t, s, u, false, base+120)
+	w = working(t, s, u)
+	if len(w) != 1 || w[0].End != base+900 {
+		t.Fatal("offline fragmented active slot", w)
+	}
+	ping(t, s, u, true, base+16*60) // :16 -> :00–:30
+	w = working(t, s, u)
+	if len(w) != 1 || w[0].ID != id || w[0].End != base+1800 {
+		t.Fatal(w)
+	}
+	ping(t, s, u, true, base+46*60) // :45 slot is within 30 min of :30 end
+	w = working(t, s, u)
+	if len(w) != 1 || w[0].End != base+3600 {
+		t.Fatal("short gap not merged", w)
+	}
+	ping(t, s, u, true, base+2*h) // gap >30 min -> separate block
+	w = working(t, s, u)
+	if len(w) != 2 || w[1].Start != base+2*h {
+		t.Fatal("long gap merged", w)
+	}
+}
+
+func TestLiveNoDurationCapAndManualDescriptionPreserved(t *testing.T) {
+	s, u := newTestStore(t)
+	base := int64(1_800_000_000)
+	for at := base; at < base+16*86400; at += 900 {
+		ping(t, s, u, true, at)
+	}
+	w := working(t, s, u)
+	if len(w) != 1 || w[0].End != base+16*86400 {
+		t.Fatal("duration capped", w)
+	}
+	manual := &Event{Start: base + 16*86400 + 60, End: base + 16*86400 + 600, Status: StatusWorking, Description: "Keep this"}
+	if err := s.CreateEvent(u.ID, manual); err != nil {
+		t.Fatal(err)
+	}
+	ping(t, s, u, true, manual.Start+60)
+	w = working(t, s, u)
+	if len(w) != 2 || w[1].Description != "Keep this" || w[1].Start != manual.Start {
+		t.Fatal("manual event changed", w)
 	}
 }
 

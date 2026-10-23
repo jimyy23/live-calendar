@@ -33,7 +33,8 @@ func TestICSLiveWorkingBlockGrowsWithStableUID(t *testing.T) {
 	if !strings.Contains(unfolded, "DESCRIPTION:"+link) {
 		t.Fatal("auto block without a description must include the team view link")
 	}
-	for _, want := range []string{"SUMMARY:Working", "SEQUENCE:1", "LAST-MODIFIED:", "DTEND:" + time.Unix(now+lookahead, 0).UTC().Format("20060102T150405Z")} {
+	slotStart := now - now%liveSlot
+	for _, want := range []string{"SUMMARY:Working", "SEQUENCE:1", "LAST-MODIFIED:", "DTEND:" + time.Unix(slotStart+liveSlot, 0).UTC().Format("20060102T150405Z")} {
 		if !strings.Contains(first, want) {
 			t.Fatalf("first feed missing %q: %s", want, first)
 		}
@@ -43,9 +44,9 @@ func TestICSLiveWorkingBlockGrowsWithStableUID(t *testing.T) {
 		t.Fatal("expected live auto block", evs)
 	}
 	uid := fmt.Sprintf("UID:%d-%s@", evs[0].ID, u.UUID[:12])
-	ping(t, s.store, u, true, now+60)
+	ping(t, s.store, u, true, slotStart+liveSlot+60)
 	second := feed()
-	for _, want := range []string{uid, "SEQUENCE:2", "DTEND:" + time.Unix(now+60+lookahead, 0).UTC().Format("20060102T150405Z")} {
+	for _, want := range []string{uid, "SEQUENCE:2", "DTEND:" + time.Unix(slotStart+2*liveSlot, 0).UTC().Format("20060102T150405Z")} {
 		if !strings.Contains(second, want) {
 			t.Fatalf("updated feed missing %q: %s", want, second)
 		}

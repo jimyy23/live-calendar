@@ -27,6 +27,13 @@ Client pings every 60 s (immediately when idle state flips) with `{device_id, ac
 A device is *running* if last_seen ≤ 150 s ago. User is **online** if any running device is active.
 
 ## Working-block sync (server side, on every ping)
+Updated behavior: online filling now uses complete 15-minute slots. Automatic Working
+blocks with gaps of at most 30 minutes merge transitively, keeping the oldest event ID,
+with no duration cap. This intentionally smooths short idle/disconnected gaps and rounds
+the first activity back to the containing quarter-hour. Manual events are not merged.
+Offline eating now touches only manually scheduled Working blocks; credited automatic
+slots are retained. The original cursor behavior below still applies to offline eating.
+
 Per user cursor `C` = end of the time range already decided.
 * If no ping within 150 s before this one (client wasn't running) → `C = now` (never touch the gap).
 * Decide range `[min(C, now), now + 60s]`:

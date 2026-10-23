@@ -43,6 +43,18 @@ ADMIN_PASSWORD=… TEAM_PING_TOKEN=… CLIENT_EXE=dist/livecal.exe ./dist/liveca
 
 ## Windows client
 
+### Live Working blocks
+
+Online activity fills the containing 15-minute slot (start/end at :00, :15, :30, :45).
+For example, 15:01 creates 15:00–15:15; activity at 15:16 extends it to 15:00–15:30.
+Automatic blocks separated by at most 30 minutes are merged, filling the intervening gap;
+continuous blocks have no maximum duration. Existing nearby automatic fragments are consolidated
+when activity resumes. This smoothing intentionally includes brief idle gaps and can bridge a
+short client-disconnected interval. Longer disconnected gaps remain untouched.
+Manual Working blocks and their descriptions are not merged. Unavailable blocks are untouched.
+When `SYNC_EAT_OFFLINE=true`, offline eating applies to manually scheduled Working blocks only:
+already credited automatic quarter-hours are retained to avoid fragmentation.
+
 Copy the per-user **Install / update** command from the admin page into PowerShell or Command Prompt on each PC. The one-line command downloads the installer and passes the username and token automatically. It validates credentials, stops the existing client, overwrites its EXE, and updates its startup entry. It installs to `%LOCALAPPDATA%\LiveCalendar` (no admin rights needed). After that it runs with no window. The command contains credentials (Base64 is not encryption); keep it private and be mindful of shell history.
 
 * Once a minute, and immediately when the state changes, it sends `{device: <random id>, active: <input in last 5 min>}`. It sends nothing else.
