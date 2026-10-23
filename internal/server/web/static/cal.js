@@ -47,7 +47,7 @@
   function dow(ts) { const p = parts(ts); return new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay(); }
 
   // ---- state ----
-  let days = window.innerWidth < 600 ? 3 : 7;
+  let days = window.matchMedia('(max-width: 700px)').matches ? 1 : 7;
   $('days').value = String(days);
   let start = 0, events = [], version = -1, days0 = [];
   function setAnchor(ts) {
@@ -67,6 +67,7 @@
   function hourPx() { return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hour')) || 44; }
 
   function build() {
+    cancelAutoScroll();
     cal.style.setProperty('--days', days);
     cal.innerHTML = '';
     days0 = [];
@@ -319,9 +320,31 @@
     if (e.key === 't') $('today').click();
   });
 
+  let scrollFrame = 0;
+  function cancelAutoScroll() { cancelAnimationFrame(scrollFrame); }
+  cal.addEventListener('wheel', cancelAutoScroll, { passive: true });
+  cal.addEventListener('touchstart', cancelAutoScroll, { passive: true });
+  cal.addEventListener('pointerdown', cancelAutoScroll, { passive: true });
   function scrollToNow() {
+    cancelAutoScroll();
+    cal.scrollTop = 0;
     const p = parts(now());
-    cal.scrollTop = Math.max(0, (p.hour - 2) * hourPx());
+    const target = Math.min(cal.scrollHeight - cal.clientHeight,
+      Math.max(0, (p.hour + p.minute / 60) * hourPx() - cal.clientHeight * .35));
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      cal.scrollTop = target;
+      return;
+    }
+    let began;
+    function animate(ts) {
+      if (began === undefined) began = ts;
+      // A brief midnight view followed by a medium-speed, eased scroll.
+      const progress = Math.min(1, Math.max(0, (ts - began - 250) / 1500));
+      const eased = progress < .5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+      cal.scrollTop = target * eased;
+      if (progress < 1) scrollFrame = requestAnimationFrame(animate);
+    }
+    scrollFrame = requestAnimationFrame(animate);
   }
 
   // ---- visitor message ----
