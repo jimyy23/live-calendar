@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -32,6 +33,8 @@ var (
 	pSystemParametersInfo = user32.NewProc("SystemParametersInfoW")
 	pSetWindowPos         = user32.NewProc("SetWindowPos")
 	pSetForegroundWindow  = user32.NewProc("SetForegroundWindow")
+	pSetTimer             = user32.NewProc("SetTimer")
+	pKillTimer            = user32.NewProc("KillTimer")
 )
 
 const runKey = `Software\Microsoft\Windows\CurrentVersion\Run`
@@ -58,56 +61,84 @@ const (
 	mbSetForeground = 0x10000
 )
 
-var popupSlots = make(chan struct{}, 3)
+var popupQueue = make(chan Message, 64)
+var popupWorker sync.Once
 
 type windowRect struct{ Left, Top, Right, Bottom int32 }
+
+func positionPopup(hwnd uintptr) {
+	var work, box windowRect
+	ok, _, _ := pSystemParametersInfo.Call(0x0030, 0, uintptr(unsafe.Pointer(&work)), 0)
+	got, _, _ := pGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&box)))
+	if ok == 0 || got == 0 {
+		return
+	}
+	x := work.Left + (work.Right-work.Left-(box.Right-box.Left))/2
+	y := work.Top + 24
+	if x < work.Left {
+		x = work.Left
+	}
+	// HWND_TOPMOST; do not activate inside the activation hook (which can
+	// recursively activate the dialog), and don't resize the native dialog.
+	pSetWindowPos.Call(hwnd, ^uintptr(0), uintptr(x), uintptr(y), 0, 0, 0x0001|0x0010)
+}
+
+// MessageBox runs its own modal message loop, which dispatches this timer.
+// Reassert topmost after dialog initialization, then keep it above ordinary
+// application windows without repeatedly stealing keyboard focus.
+var popupTimer = windows.NewCallback(func(hwnd, msg, timer, tick uintptr) uintptr {
+	positionPopup(hwnd)
+	if timer == 1 {
+		pKillTimer.Call(hwnd, 1)
+		pSetForegroundWindow.Call(hwnd)
+		pSetTimer.Call(hwnd, 2, 1000, popupTimerRepeat)
+	}
+	return 0
+})
+
+var popupTimerRepeat = windows.NewCallback(func(hwnd, msg, timer, tick uintptr) uintptr {
+	positionPopup(hwnd)
+	return 0
+})
 
 // A thread-local CBT hook positions the message box at activation, once Windows
 // has computed its size. One static callback avoids leaking callback trampolines.
 var popupHook = windows.NewCallback(func(code int32, hwnd, param uintptr) uintptr {
 	if code == 5 { // HCBT_ACTIVATE
-		var work, box windowRect
-		ok, _, _ := pSystemParametersInfo.Call(0x0030, 0, uintptr(unsafe.Pointer(&work)), 0) // SPI_GETWORKAREA
-		got, _, _ := pGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&box)))
-		if ok != 0 && got != 0 {
-			x := work.Left + (work.Right-work.Left-(box.Right-box.Left))/2
-			y := work.Top + 24
-			if x < work.Left {
-				x = work.Left
-			}
-			// HWND_TOPMOST, SWP_NOSIZE | SWP_SHOWWINDOW
-			pSetWindowPos.Call(hwnd, ^uintptr(0), uintptr(x), uintptr(y), 0, 0, 0x0001|0x0040)
-		}
-		pSetForegroundWindow.Call(hwnd)
+		positionPopup(hwnd)
+		pSetTimer.Call(hwnd, 1, 100, popupTimer)
 	}
 	r, _, _ := pCallNextHookEx.Call(0, uintptr(code), hwnd, param)
 	return r
 })
 
 func popup(m Message) {
-	select {
-	case popupSlots <- struct{}{}:
-	default:
-		return // don't pile up windows
+	popupWorker.Do(func() {
+		go func() {
+			for message := range popupQueue {
+				showPopup(message)
+			}
+		}()
+	})
+	popupQueue <- m
+}
+
+func showPopup(m Message) {
+	// The hook and MessageBox must run on the same native thread.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	hook, _, _ := pSetWindowsHookEx.Call(5, popupHook, 0, uintptr(windows.GetCurrentThreadId())) // WH_CBT
+	if hook != 0 {
+		defer pUnhookWindowsHookEx.Call(hook)
 	}
-	go func() {
-		defer func() { <-popupSlots }()
-		// The hook and MessageBox must run on the same native thread.
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-		hook, _, _ := pSetWindowsHookEx.Call(5, popupHook, 0, uintptr(windows.GetCurrentThreadId())) // WH_CBT
-		if hook != 0 {
-			defer pUnhookWindowsHookEx.Call(hook)
-		}
-		title := "Live Calendar message"
-		if m.From != "" {
-			title = "Message from " + m.From
-		}
-		body := m.Text + "\n\n— " + time.Unix(m.At, 0).Format("15:04")
-		t, _ := windows.UTF16PtrFromString(title)
-		b, _ := windows.UTF16PtrFromString(body)
-		pMessageBox.Call(0, uintptr(unsafe.Pointer(b)), uintptr(unsafe.Pointer(t)), mbOK|mbIconInfo|mbTopmost|mbSetForeground)
-	}()
+	title := "Live Calendar message"
+	if m.From != "" {
+		title = "Message from " + m.From
+	}
+	body := m.Text + "\n\n— " + time.Unix(m.At, 0).Format("15:04")
+	t, _ := windows.UTF16PtrFromString(title)
+	b, _ := windows.UTF16PtrFromString(body)
+	pMessageBox.Call(0, uintptr(unsafe.Pointer(b)), uintptr(unsafe.Pointer(t)), mbOK|mbIconInfo|mbTopmost|mbSetForeground)
 }
 
 func uninstall() {
