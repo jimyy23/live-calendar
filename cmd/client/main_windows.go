@@ -152,7 +152,7 @@ func showPopup(m Message) {
 	}
 	title := "Live Calendar message"
 	if m.From != "" {
-		title = "Message from " + m.From
+		title = m.From
 	}
 	body := m.Text + "\n\n— " + time.Unix(m.At, 0).Format("15:04")
 	t, _ := windows.UTF16PtrFromString(title)
