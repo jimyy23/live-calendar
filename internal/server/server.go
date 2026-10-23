@@ -160,41 +160,40 @@ func (s *Server) admin(h http.HandlerFunc) http.HandlerFunc {
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
-		if r.Method == http.MethodPost && !s.sameOrigin(r) {
-			http.Error(w, "bad origin", http.StatusForbidden)
+		if r.Method == http.MethodPost && !s.csrfOK(r) {
+			log.Printf("csrf reject %s %s origin=%q sfs=%q", r.Method, r.URL.Path, r.Header.Get("Origin"), r.Header.Get("Sec-Fetch-Site"))
+			http.Redirect(w, r, "/?msg=Session+form+expired,+please+try+again", http.StatusSeeOther)
 			return
 		}
 		h(w, r)
 	}
 }
 
-// sameOrigin is the CSRF check for state-changing requests. Modern browsers send
-// Sec-Fetch-Site, which is authoritative; otherwise fall back to Origin/Referer.
-// "Origin: null" (sent e.g. under strict referrer policies) is only trusted when
-// Sec-Fetch-Site confirms the request is same-origin.
-func (s *Server) sameOrigin(r *http.Request) bool {
-	switch r.Header.Get("Sec-Fetch-Site") {
-	case "same-origin", "none":
-		return true
-	case "same-site", "cross-site":
-		return false
+// csrfToken is bound to the admin session cookie, so it needs no storage and
+// does not depend on Origin/Referer headers (which browsers and extensions vary on).
+func (s *Server) csrfToken(r *http.Request) string {
+	c, err := r.Cookie("lc_admin")
+	if err != nil {
+		return ""
 	}
-	o := r.Header.Get("Origin")
-	if o == "" || o == "null" {
-		o = r.Header.Get("Referer")
-	}
-	if o == "" {
-		return true // non-browser client (curl, scripts); cookies are SameSite=Lax anyway
-	}
-	o = strings.TrimPrefix(strings.TrimPrefix(o, "https://"), "http://")
-	host, _, _ := strings.Cut(o, "/")
-	return strings.EqualFold(host, r.Host) || strings.EqualFold(host, s.publicHost())
+	m := hmac.New(sha256.New, s.secret)
+	m.Write([]byte("csrf|" + c.Value))
+	return hex.EncodeToString(m.Sum(nil))[:32]
 }
 
-func (s *Server) publicHost() string {
-	h := strings.TrimPrefix(strings.TrimPrefix(s.cfg.BaseURL, "https://"), "http://")
-	h, _, _ = strings.Cut(h, "/")
-	return h
+func (s *Server) csrfOK(r *http.Request) bool {
+	want := s.csrfToken(r)
+	return want != "" && subtle.ConstantTimeCompare([]byte(r.FormValue("csrf")), []byte(want)) == 1
+}
+
+// jsonRequest: a cross-site page cannot send a JSON body (or PUT/DELETE) without a
+// CORS preflight, which this server never approves, so this blocks CSRF on the API.
+func jsonRequest(r *http.Request) bool {
+	if r.Method == http.MethodDelete {
+		return true
+	}
+	ct := strings.ToLower(r.Header.Get("Content-Type"))
+	return strings.HasPrefix(ct, "application/json")
 }
 
 func clientIP(r *http.Request) string {
@@ -246,6 +245,7 @@ type userRow struct {
 
 func (s *Server) render(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	if err := s.tpl.ExecuteTemplate(w, name, data); err != nil {
 		log.Println("template:", err)
 	}
@@ -274,7 +274,7 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "admin.html", map[string]any{
 		"Users": rows, "BaseURL": s.cfg.BaseURL, "Flash": r.URL.Query().Get("msg"),
 		"ExeOK": exeErr == nil, "FillOnline": s.cfg.FillOnline, "EatOffline": s.cfg.EatOffline,
-		"TZ": s.cfg.TZName,
+		"TZ": s.cfg.TZName, "CSRF": s.csrfToken(r),
 	})
 }
 
@@ -439,8 +439,8 @@ func (s *Server) calAccess(write bool, h calHandler) http.HandlerFunc {
 			jsonErr(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		if r.Method != http.MethodGet && !s.sameOrigin(r) {
-			jsonErr(w, http.StatusForbidden, "bad origin")
+		if r.Method != http.MethodGet && !jsonRequest(r) {
+			jsonErr(w, http.StatusUnsupportedMediaType, "expected application/json")
 			return
 		}
 		h(w, r, u)

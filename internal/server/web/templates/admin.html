@@ -11,7 +11,7 @@
 
   <section class="card">
     <h2>Users</h2>
-    <form class="row" method="post" action="/admin/users">
+    <form class="row" method="post" action="/admin/users"><input type="hidden" name="csrf" value="{{$.CSRF}}">
       <input name="username" placeholder="new username" required pattern="[A-Za-z0-9._\-]{2,32}">
       <button>Create user</button>
     </form>
@@ -33,8 +33,8 @@
         <dt>Subscribe (ICS)</dt><dd><input readonly value="{{.ICSURL}}" onclick="this.select()"></dd>
       </dl>
       <div class="row">
-        <form method="post" action="/admin/users/{{.ID}}/rotate" onsubmit="return confirm('Rotate token for {{.Username}}? Existing edit links and installed clients stop working.')"><button class="small">Rotate token</button></form>
-        <form method="post" action="/admin/users/{{.ID}}/delete" onsubmit="return confirm('Delete {{.Username}} and their calendar?')"><button class="small danger">Delete</button></form>
+        <form method="post" action="/admin/users/{{.ID}}/rotate" onsubmit="return confirm('Rotate token for {{.Username}}? Existing edit links and installed clients stop working.')"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="small">Rotate token</button></form>
+        <form method="post" action="/admin/users/{{.ID}}/delete" onsubmit="return confirm('Delete {{.Username}} and their calendar?')"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="small danger">Delete</button></form>
       </div>
     </div>
     {{end}}

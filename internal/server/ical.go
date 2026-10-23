@@ -51,7 +51,6 @@ func (s *Server) ical(w http.ResponseWriter, r *http.Request) {
 	}
 	host := strings.TrimPrefix(strings.TrimPrefix(s.cfg.BaseURL, "https://"), "http://")
 	host, _, _ = strings.Cut(host, "/")
-	stamp := now.UTC().Format("20060102T150405Z")
 
 	var b strings.Builder
 	line := func(f string, a ...any) { b.WriteString(icsFold(fmt.Sprintf(f, a...))) }
@@ -62,8 +61,9 @@ func (s *Server) ical(w http.ResponseWriter, r *http.Request) {
 	line("METHOD:PUBLISH")
 	line("X-WR-CALNAME:%s", icsEscape(u.Username+" - Live Calendar"))
 	line("X-WR-TIMEZONE:%s", s.cfg.TZName)
-	line("REFRESH-INTERVAL;VALUE=DURATION:PT15M")
-	line("X-PUBLISHED-TTL:PT15M")
+	// Advisory only: subscription clients control their own polling schedule.
+	line("REFRESH-INTERVAL;VALUE=DURATION:PT1M")
+	line("X-PUBLISHED-TTL:PT1M")
 	for _, e := range evs {
 		title := "Working"
 		busy := "BUSY"
@@ -75,10 +75,14 @@ func (s *Server) ical(w http.ResponseWriter, r *http.Request) {
 		}
 		line("BEGIN:VEVENT")
 		line("UID:%d-%s@%s", e.ID, u.UUID[:12], host)
+		stamp := time.Unix(e.UpdatedAt, 0).UTC().Format("20060102T150405Z")
 		line("DTSTAMP:%s", stamp)
+		line("LAST-MODIFIED:%s", stamp)
+		line("SEQUENCE:%d", u.CalVersion)
 		line("DTSTART:%s", time.Unix(e.Start, 0).UTC().Format("20060102T150405Z"))
 		line("DTEND:%s", time.Unix(e.End, 0).UTC().Format("20060102T150405Z"))
 		line("SUMMARY:%s", icsEscape(title))
+		line("STATUS:CONFIRMED")
 		if e.Description != "" {
 			line("DESCRIPTION:%s", icsEscape(e.Description))
 		}
@@ -88,6 +92,6 @@ func (s *Server) ical(w http.ResponseWriter, r *http.Request) {
 	}
 	line("END:VCALENDAR")
 	w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-store, max-age=0")
 	w.Write([]byte(b.String()))
 }

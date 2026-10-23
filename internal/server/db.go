@@ -96,6 +96,7 @@ type Event struct {
 	Status      string `json:"status"`
 	Description string `json:"description"`
 	Auto        bool   `json:"auto"`
+	UpdatedAt   int64  `json:"-"`
 }
 
 type LiveStatus struct {
@@ -216,7 +217,7 @@ func (s *Store) DeleteUser(id int64) error {
 // ---- events ----
 
 func (s *Store) Events(userID, from, to int64) ([]Event, error) {
-	rows, err := s.db.Query(`SELECT id, start_at, end_at, status, description, auto FROM events
+	rows, err := s.db.Query(`SELECT id, start_at, end_at, status, description, auto, updated_at FROM events
 		WHERE user_id=? AND start_at < ? AND end_at > ? ORDER BY start_at, id`, userID, to, from)
 	if err != nil {
 		return nil, err
@@ -225,7 +226,7 @@ func (s *Store) Events(userID, from, to int64) ([]Event, error) {
 	out := []Event{}
 	for rows.Next() {
 		var e Event
-		if err := rows.Scan(&e.ID, &e.Start, &e.End, &e.Status, &e.Description, &e.Auto); err != nil {
+		if err := rows.Scan(&e.ID, &e.Start, &e.End, &e.Status, &e.Description, &e.Auto, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, e)

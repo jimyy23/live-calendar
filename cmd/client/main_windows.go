@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -19,11 +20,18 @@ import (
 )
 
 var (
-	user32        = windows.NewLazySystemDLL("user32.dll")
-	kernel32      = windows.NewLazySystemDLL("kernel32.dll")
-	pGetLastInput = user32.NewProc("GetLastInputInfo")
-	pMessageBox   = user32.NewProc("MessageBoxW")
-	pGetTickCount = kernel32.NewProc("GetTickCount")
+	user32                = windows.NewLazySystemDLL("user32.dll")
+	kernel32              = windows.NewLazySystemDLL("kernel32.dll")
+	pGetLastInput         = user32.NewProc("GetLastInputInfo")
+	pMessageBox           = user32.NewProc("MessageBoxW")
+	pGetTickCount         = kernel32.NewProc("GetTickCount")
+	pSetWindowsHookEx     = user32.NewProc("SetWindowsHookExW")
+	pUnhookWindowsHookEx  = user32.NewProc("UnhookWindowsHookEx")
+	pCallNextHookEx       = user32.NewProc("CallNextHookEx")
+	pGetWindowRect        = user32.NewProc("GetWindowRect")
+	pSystemParametersInfo = user32.NewProc("SystemParametersInfoW")
+	pSetWindowPos         = user32.NewProc("SetWindowPos")
+	pSetForegroundWindow  = user32.NewProc("SetForegroundWindow")
 )
 
 const runKey = `Software\Microsoft\Windows\CurrentVersion\Run`
@@ -52,6 +60,30 @@ const (
 
 var popupSlots = make(chan struct{}, 3)
 
+type windowRect struct{ Left, Top, Right, Bottom int32 }
+
+// A thread-local CBT hook positions the message box at activation, once Windows
+// has computed its size. One static callback avoids leaking callback trampolines.
+var popupHook = windows.NewCallback(func(code int32, hwnd, param uintptr) uintptr {
+	if code == 5 { // HCBT_ACTIVATE
+		var work, box windowRect
+		ok, _, _ := pSystemParametersInfo.Call(0x0030, 0, uintptr(unsafe.Pointer(&work)), 0) // SPI_GETWORKAREA
+		got, _, _ := pGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&box)))
+		if ok != 0 && got != 0 {
+			x := work.Left + (work.Right-work.Left-(box.Right-box.Left))/2
+			y := work.Top + 24
+			if x < work.Left {
+				x = work.Left
+			}
+			// HWND_TOPMOST, SWP_NOSIZE | SWP_SHOWWINDOW
+			pSetWindowPos.Call(hwnd, ^uintptr(0), uintptr(x), uintptr(y), 0, 0, 0x0001|0x0040)
+		}
+		pSetForegroundWindow.Call(hwnd)
+	}
+	r, _, _ := pCallNextHookEx.Call(0, uintptr(code), hwnd, param)
+	return r
+})
+
 func popup(m Message) {
 	select {
 	case popupSlots <- struct{}{}:
@@ -60,6 +92,13 @@ func popup(m Message) {
 	}
 	go func() {
 		defer func() { <-popupSlots }()
+		// The hook and MessageBox must run on the same native thread.
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		hook, _, _ := pSetWindowsHookEx.Call(5, popupHook, 0, uintptr(windows.GetCurrentThreadId())) // WH_CBT
+		if hook != 0 {
+			defer pUnhookWindowsHookEx.Call(hook)
+		}
 		title := "Live Calendar message"
 		if m.From != "" {
 			title = "Message from " + m.From

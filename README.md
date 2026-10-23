@@ -7,6 +7,10 @@ A lightweight live-status calendar. It's a single Go binary with SQLite storage 
 * `/edit/{user_uuid}`: asks for the user's token. `?token=…` signs in directly.
 * `/ical/{user_uuid}.ics`: subscription feed for Google, Apple or Outlook. The long uuid acts as the secret.
 
+The ICS feed includes live, auto-created Working blocks and their updated end times on every fetch.
+It advertises a one-minute refresh interval, but Google/Apple/Outlook decide when to poll;
+subscriptions are not push-based and can lag by hours. Use the web UI for real-time status.
+
 Design notes are in [docs/PLAN.md](docs/PLAN.md).
 
 ## Configuration (env)
@@ -43,5 +47,6 @@ Download the installer from the admin page and run it on each PC. It asks for a 
 
 * Once a minute, and immediately when the state changes, it sends `{device: <random id>, active: <input in last 5 min>}`. It sends nothing else.
 * Visitor messages appear as a small always-on-top message box on the PCs that are currently active.
+  The box is positioned at the top-center of the primary screen's usable desktop area.
 * If the server fails every request for 14 days while the PC has network, the client removes itself.
 * To remove it manually, run the uninstaller from the admin page.
