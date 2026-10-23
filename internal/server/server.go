@@ -100,7 +100,8 @@ func (s *Server) Handler() http.Handler {
 func securityHeaders(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Referrer-Policy", "no-referrer")
+		// same-origin: never leak token-bearing URLs to other sites, but keep Origin/Referer for our own POSTs
+		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("X-Frame-Options", "DENY")
 		h.ServeHTTP(w, r)
 	})
@@ -159,7 +160,7 @@ func (s *Server) admin(h http.HandlerFunc) http.HandlerFunc {
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
-		if r.Method == http.MethodPost && !sameOrigin(r) {
+		if r.Method == http.MethodPost && !s.sameOrigin(r) {
 			http.Error(w, "bad origin", http.StatusForbidden)
 			return
 		}
@@ -167,17 +168,33 @@ func (s *Server) admin(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func sameOrigin(r *http.Request) bool {
+// sameOrigin is the CSRF check for state-changing requests. Modern browsers send
+// Sec-Fetch-Site, which is authoritative; otherwise fall back to Origin/Referer.
+// "Origin: null" (sent e.g. under strict referrer policies) is only trusted when
+// Sec-Fetch-Site confirms the request is same-origin.
+func (s *Server) sameOrigin(r *http.Request) bool {
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "same-origin", "none":
+		return true
+	case "same-site", "cross-site":
+		return false
+	}
 	o := r.Header.Get("Origin")
-	if o == "" {
+	if o == "" || o == "null" {
 		o = r.Header.Get("Referer")
 	}
 	if o == "" {
-		return true
+		return true // non-browser client (curl, scripts); cookies are SameSite=Lax anyway
 	}
 	o = strings.TrimPrefix(strings.TrimPrefix(o, "https://"), "http://")
 	host, _, _ := strings.Cut(o, "/")
-	return host == r.Host
+	return strings.EqualFold(host, r.Host) || strings.EqualFold(host, s.publicHost())
+}
+
+func (s *Server) publicHost() string {
+	h := strings.TrimPrefix(strings.TrimPrefix(s.cfg.BaseURL, "https://"), "http://")
+	h, _, _ = strings.Cut(h, "/")
+	return h
 }
 
 func clientIP(r *http.Request) string {
@@ -422,7 +439,7 @@ func (s *Server) calAccess(write bool, h calHandler) http.HandlerFunc {
 			jsonErr(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		if r.Method != http.MethodGet && !sameOrigin(r) {
+		if r.Method != http.MethodGet && !s.sameOrigin(r) {
 			jsonErr(w, http.StatusForbidden, "bad origin")
 			return
 		}
