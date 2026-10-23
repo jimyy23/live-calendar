@@ -28,6 +28,11 @@ func TestICSLiveWorkingBlockGrowsWithStableUID(t *testing.T) {
 		return w.Body.String()
 	}
 	first := feed()
+	unfolded := strings.ReplaceAll(first, "\r\n ", "")
+	link := "Live Status View (Team view): " + s.cfg.BaseURL + "/view/" + u.UUID + "?team_token=" + s.cfg.TeamToken
+	if !strings.Contains(unfolded, "DESCRIPTION:"+link) {
+		t.Fatal("auto block without a description must include the team view link")
+	}
 	for _, want := range []string{"SUMMARY:Working", "SEQUENCE:1", "LAST-MODIFIED:", "DTEND:" + time.Unix(now+lookahead, 0).UTC().Format("20060102T150405Z")} {
 		if !strings.Contains(first, want) {
 			t.Fatalf("first feed missing %q: %s", want, first)
@@ -47,5 +52,13 @@ func TestICSLiveWorkingBlockGrowsWithStableUID(t *testing.T) {
 	}
 	if strings.Count(second, "BEGIN:VEVENT") != 1 {
 		t.Fatal("live block duplicated")
+	}
+	manual := &Event{Start: now + 3600, End: now + 7200, Status: StatusUnavailable, Description: "Dentist\nBack soon"}
+	if err := s.store.CreateEvent(u.ID, manual); err != nil {
+		t.Fatal(err)
+	}
+	withManual := strings.ReplaceAll(feed(), "\r\n ", "")
+	if !strings.Contains(withManual, `DESCRIPTION:Dentist\nBack soon\n\n`+link) {
+		t.Fatal("manual block must preserve description and append team view link")
 	}
 }

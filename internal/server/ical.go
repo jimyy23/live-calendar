@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -83,9 +84,12 @@ func (s *Server) ical(w http.ResponseWriter, r *http.Request) {
 		line("DTEND:%s", time.Unix(e.End, 0).UTC().Format("20060102T150405Z"))
 		line("SUMMARY:%s", icsEscape(title))
 		line("STATUS:CONFIRMED")
-		if e.Description != "" {
-			line("DESCRIPTION:%s", icsEscape(e.Description))
+		description := e.Description
+		if description != "" {
+			description += "\n\n"
 		}
+		description += "Live Status View (Team view): " + s.cfg.BaseURL + "/view/" + u.UUID + "?team_token=" + url.QueryEscape(s.cfg.TeamToken)
+		line("DESCRIPTION:%s", icsEscape(description))
 		line("TRANSP:OPAQUE")
 		line("X-MICROSOFT-CDO-BUSYSTATUS:%s", busy)
 		line("END:VEVENT")
